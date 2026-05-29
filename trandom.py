@@ -24,7 +24,7 @@ Usage examples:
   echo -e "foo\\nbar\\nbaz" | python trandom.py --shuffle
 """
 
-VERSION = 0.1
+VERSION = 0.2
 AUTHOR = "igor.brzezek@gmail.com"
 GITHUB = "https://github.com/IgorBrzezek/trandom"
 
@@ -42,18 +42,18 @@ from typing import Optional, List, Tuple
 #  UTILITY: progress bar
 # ======================================================================
 
-def _progress_bar(current: int, total: int, prefix: str = "", bar_len: int = 30):
+def _progress_bar(current: int, total: int, prefix: str = "", bar_len: int = 30, file=sys.stdout):
     """Print an in-place progress bar with percentage and #-symbols."""
     if total == 0:
         return
     pct = current / total
     filled = int(bar_len * pct)
     bar = "#" * filled + "." * (bar_len - filled)
-    sys.stdout.write(f"\r{prefix}  {pct*100:5.1f}% [{bar}]  {current}/{total}")
-    sys.stdout.flush()
+    file.write(f"\r{prefix}  {pct*100:5.1f}% [{bar}]  {current}/{total}")
+    file.flush()
     if current >= total:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        file.write("\n")
+        file.flush()
 
 
 # ======================================================================
@@ -205,6 +205,8 @@ class TrueRandom:
         prev_x, prev_y = None, None
         deadline = (time.time() + duration) if duration is not None else None
 
+        _progress_bar(0, samples_target, "Mouse entropy")
+
         while (deadline is None or time.time() < deadline) and collected < samples_target:
             pt = POINT()
             GetCursorPos(ctypes.byref(pt))
@@ -230,6 +232,8 @@ class TrueRandom:
         prev_x, prev_y = None, None
         start = time.time()
         deadline = (start + duration) if duration is not None else None
+
+        _progress_bar(0, samples_target, "Mouse entropy")
 
         def on_move(x, y):
             nonlocal collected, prev_x, prev_y
@@ -290,6 +294,8 @@ class TrueRandom:
         if self.verbose:
             print("    Press keys (any keys) on the keyboard now!\n")
 
+        _progress_bar(0, samples_target, "Keyboard entropy")
+
         while (deadline is None or time.time() < deadline) and collected < samples_target:
             if msvcrt.kbhit():
                 key = msvcrt.getch()
@@ -311,6 +317,8 @@ class TrueRandom:
 
         if self.verbose:
             print("    Press keys (any keys) on the keyboard now!\n")
+
+        _progress_bar(0, samples_target, "Keyboard entropy")
 
         while (deadline is None or time.time() < deadline) and collected < samples_target:
             if select.select([sys.stdin], [], [], 0.01)[0]:
@@ -620,7 +628,9 @@ class _HelpAction(argparse.Action):
             print("  --samples N   target mouse samples (default 250)")
             print("  --output F    write result to file instead of stdout")
             print("  --list-sources, --probe  probe and show all available entropy sources")
-            print("  -v, --verbose  verbose output")
+            print("  -v, --verbose  verbose output (shows generation progress)")
+            print("  --pb, --progressbar  show progress bar during value generation")
+            print("  (without --pb: a single 'Generating data - wait...' message is shown)")
             print("\n  See --help for full documentation.")
             print(f"  v{VERSION} | {AUTHOR} | {GITHUB}")
             parser.exit()
@@ -675,7 +685,12 @@ SENSOR ENTROPY:
 
 VERBOSITY:
     -v, --verbose     Print detailed information about entropy sources
-                      and collection progress.
+                      and collection / generation progress.
+    --pb, --progressbar
+                      Show a live progress bar (### %) during value
+                      generation (e.g. when generating 10000 integers).
+                      Without this flag, a single "Generating data -
+                      wait..." message is displayed once instead.
     --list-sources, --probe
                       Probe and show all available entropy sources with
                       detected sensors and platform capabilities, then exit.
@@ -773,6 +788,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--keyboard", action="store_true", help="collect keyboard-press entropy (mutually exclusive with --mouse)")
     parser.add_argument("--sensors", action="store_true", help="collect hardware sensor entropy (CPU temp, fans, voltages)")
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
+    parser.add_argument("--pb", "--progressbar", action="store_true", dest="progressbar", help="show progress bar during value generation")
 
     parser.add_argument("--int", action="store_true", dest="gen_int", help="generate random integer")
     parser.add_argument("--float", action="store_true", dest="gen_float", help="generate random float")
@@ -855,18 +871,25 @@ def main(argv: Optional[List[str]] = None):
 
     n = args.number
 
+    if n > 1 and (mode_int or mode_float) and not args.progressbar:
+        print("Generating data - wait...", file=sys.stderr)
+
     try:
         if mode_int:
             for i in range(n):
                 val = rng.random_int(args.min, args.max, use_mouse=use_mouse, use_keyboard=use_keyboard, use_sensors=use_sensors)
                 out.write(str(val) + "\n")
-                if args.verbose and (n == 1 or (i + 1) % 10 == 0 or i == n - 1):
+                if args.progressbar and n > 1:
+                    _progress_bar(i + 1, n, "Generating integers", file=sys.stderr)
+                elif args.verbose and (n == 1 or (i + 1) % 10 == 0 or i == n - 1):
                     print(f"[*] Generated {i+1}/{n} integers", file=sys.stderr)
 
         elif mode_float:
             for i in range(n):
                 val = rng.random_float(use_mouse=use_mouse, use_keyboard=use_keyboard, use_sensors=use_sensors)
                 out.write(f"{val:.15f}\n")
+                if args.progressbar and n > 1:
+                    _progress_bar(i + 1, n, "Generating floats", file=sys.stderr)
 
         elif mode_bytes:
             data = rng.random_bytes(args.bytes, use_mouse=use_mouse, use_keyboard=use_keyboard, use_sensors=use_sensors)

@@ -4,7 +4,7 @@
 
 All collected entropy is mixed through SHA3-512 and then SHA-256 to produce uniformly distributed random output.
 
-**Version:** 0.1
+**Version:** 0.2
 **Author:** igor.brzezek@gmail.com
 **Repository:** https://github.com/IgorBrzezek/trandom
 
@@ -95,7 +95,8 @@ python trandom.py [OPTIONS]
 | Option | Description |
 |---|---|
 | `--list-sources`, `--probe` | Probe and show all available entropy sources with detected sensors, then exit |
-| `-v`, `--verbose` | Show detailed information about entropy collection progress |
+| `-v`, `--verbose` | Show detailed information about entropy collection and generation progress |
+| `--pb`, `--progressbar` | Show live progress bar during value generation (useful for large `-n`). Without this flag, a single "Generating data - wait..." message is shown instead. |
 
 ### Help
 
@@ -199,6 +200,15 @@ python trandom.py --hex 64 --mouse --verbose
 
 # Write output to a file
 python trandom.py --bytes 32 -o random.hex
+
+# Generate 1000 integers with live progress bar
+python trandom.py --int --min 1 --max 49 -n 1000 --pb
+
+# Generate 1000 integers (shows "Generating data - wait..." once)
+python trandom.py --int --min 1 --max 49 -n 1000
+
+# Generate 1000 integers with verbose progress messages
+python trandom.py --int --min 1 --max 49 -n 1000 -v
 
 # Probe available entropy sources on this system
 python trandom.py --list-sources
