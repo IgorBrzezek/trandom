@@ -4,7 +4,7 @@
 
 All collected entropy is mixed through SHA3-512 and then SHA-256 to produce uniformly distributed random output.
 
-**Version:** 0.2
+**Version:** 0.3
 **Author:** igor.brzezek@gmail.com
 **Repository:** https://github.com/IgorBrzezek/trandom
 

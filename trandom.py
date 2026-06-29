@@ -24,7 +24,7 @@ Usage examples:
   echo -e "foo\\nbar\\nbaz" | python trandom.py --shuffle
 """
 
-VERSION = 0.2
+VERSION = 0.3
 AUTHOR = "igor.brzezek@gmail.com"
 GITHUB = "https://github.com/IgorBrzezek/trandom"
 
@@ -310,8 +310,12 @@ class TrueRandom:
         return collected
 
     def _collect_keyboard_entropy_poll(self, duration: Optional[float], samples_target: int) -> int:
-        """Collect keyboard-press entropy via stdin polling (Unix fallback)."""
+        """Collect keyboard-press entropy via stdin polling (Unix).
+        Disables echo and canonical (line-buffered) input so each
+        keypress is captured immediately without displaying it.
+        """
         import select
+        import termios
         collected = 0
         deadline = (time.time() + duration) if duration is not None else None
 
@@ -320,15 +324,39 @@ class TrueRandom:
 
         _progress_bar(0, samples_target, "Keyboard entropy")
 
-        while (deadline is None or time.time() < deadline) and collected < samples_target:
-            if select.select([sys.stdin], [], [], 0.01)[0]:
-                key = sys.stdin.read(1)
-                now_ns = time.perf_counter_ns()
-                chunk = struct.pack("BQq", ord(key) if key else 0, now_ns, id(object()))
-                self._feed_keyboard_entropy(hashlib.sha256(chunk).digest())
-                collected += 1
-                if collected % 5 == 0 or collected == samples_target:
-                    _progress_bar(collected, samples_target, "Keyboard entropy")
+        fd = None
+        old = None
+        try:
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            mode = termios.tcgetattr(fd)
+            mode[3] &= ~(termios.ECHO | termios.ICANON)
+            mode[6][termios.VMIN] = 1
+            mode[6][termios.VTIME] = 0
+            termios.tcsetattr(fd, termios.TCSADRAIN, mode)
+        except (OSError, termios.error):
+            old = None
+
+        try:
+            while (deadline is None or time.time() < deadline) and collected < samples_target:
+                if fd is not None:
+                    r, _, _ = select.select([fd], [], [], 0.01)
+                else:
+                    r, _, _ = select.select([sys.stdin], [], [], 0.01)
+                if r:
+                    now_ns = time.perf_counter_ns()
+                    if fd is not None:
+                        raw = os.read(fd, 1)
+                    else:
+                        raw = sys.stdin.read(1).encode()
+                    chunk = struct.pack("BQq", raw[0] if raw else 0, now_ns, id(object()))
+                    self._feed_keyboard_entropy(hashlib.sha256(chunk).digest())
+                    collected += 1
+                    if collected % 5 == 0 or collected == samples_target:
+                        _progress_bar(collected, samples_target, "Keyboard entropy")
+        finally:
+            if old is not None and fd is not None:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
         return collected
 
